@@ -30,14 +30,15 @@ from .backbone import build_backbone
 from .matcher import build_matcher
 from .deformable_transformer_plus import build_deforamble_transformer, pos2posemb
 from .qim import build as build_query_interaction_layer
+from .memory_bank import build as build_memory_bank
 from .deformable_detr import SetCriterion, MLP, sigmoid_focal_loss
 
 
 class ClipMatcher(SetCriterion):
     def __init__(self, num_classes,
-                        matcher,
-                        weight_dict,
-                        losses):
+                 matcher,
+                 weight_dict,
+                 losses):
         """ Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -75,7 +76,8 @@ class ClipMatcher(SetCriterion):
 
         num_tracks = len(track_instances)
         src_idx = torch.arange(num_tracks, dtype=torch.long, device=device)
-        tgt_idx = track_instances.matched_gt_idxes  # -1 for FP tracks and disappeared tracks
+        # -1 for FP tracks and disappeared tracks
+        tgt_idx = track_instances.matched_gt_idxes
 
         track_losses = self.get_loss('labels',
                                      outputs=outputs,
@@ -87,7 +89,8 @@ class ClipMatcher(SetCriterion):
              track_losses.items()})
 
     def get_num_boxes(self, num_samples):
-        num_boxes = torch.as_tensor(num_samples, dtype=torch.float, device=self.sample_device)
+        num_boxes = torch.as_tensor(
+            num_samples, dtype=torch.float, device=self.sample_device)
         if is_dist_avail_and_initialized():
             torch.distributed.all_reduce(num_boxes)
         num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
@@ -108,7 +111,7 @@ class ClipMatcher(SetCriterion):
            The target boxes are expected in format (center_x, center_y, h, w), normalized by the image size.
         """
         # We ignore the regression loss of the track-disappear slots.
-        #TODO: Make this filter process more elegant.
+        # TODO: Make this filter process more elegant.
         filtered_idx = []
         for src_per_img, tgt_per_img in indices:
             keep = tgt_per_img != -1
@@ -116,13 +119,16 @@ class ClipMatcher(SetCriterion):
         indices = filtered_idx
         idx = self._get_src_permutation_idx(indices)
         src_boxes = outputs['pred_boxes'][idx]
-        target_boxes = torch.cat([gt_per_img.boxes[i] for gt_per_img, (_, i) in zip(gt_instances, indices)], dim=0)
+        target_boxes = torch.cat(
+            [gt_per_img.boxes[i] for gt_per_img, (_, i) in zip(gt_instances, indices)], dim=0)
 
         # for pad target, don't calculate regression loss, judged by whether obj_id=-1
-        target_obj_ids = torch.cat([gt_per_img.obj_ids[i] for gt_per_img, (_, i) in zip(gt_instances, indices)], dim=0) # size(16)
+        target_obj_ids = torch.cat([gt_per_img.obj_ids[i] for gt_per_img, (_, i) in zip(
+            gt_instances, indices)], dim=0)  # size(16)
         mask = (target_obj_ids != -1)
 
-        loss_bbox = F.l1_loss(src_boxes[mask], target_boxes[mask], reduction='none')
+        loss_bbox = F.l1_loss(
+            src_boxes[mask], target_boxes[mask], reduction='none')
         loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
             box_ops.box_cxcywh_to_xyxy(src_boxes[mask]),
             box_ops.box_cxcywh_to_xyxy(target_boxes[mask])))
@@ -152,31 +158,39 @@ class ClipMatcher(SetCriterion):
         target_classes_o = torch.cat(labels)
         target_classes[idx] = target_classes_o
         if self.focal_loss:
-            gt_labels_target = F.one_hot(target_classes, num_classes=self.num_classes + 1)[:, :, :-1]  # no loss for the last (background) class
+            # no loss for the last (background) class
+            gt_labels_target = F.one_hot(
+                target_classes, num_classes=self.num_classes + 1)[:, :, :-1]
             gt_labels_target = gt_labels_target.to(src_logits)
             loss_ce = sigmoid_focal_loss(src_logits.flatten(1),
-                                             gt_labels_target.flatten(1),
-                                             alpha=0.25,
-                                             gamma=2,
-                                             num_boxes=num_boxes, mean_in_dim1=False)
+                                         gt_labels_target.flatten(1),
+                                         alpha=0.25,
+                                         gamma=2,
+                                         num_boxes=num_boxes, mean_in_dim1=False)
             loss_ce = loss_ce.sum()
         else:
-            loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+            loss_ce = F.cross_entropy(src_logits.transpose(
+                1, 2), target_classes, self.empty_weight)
         losses = {'loss_ce': loss_ce}
 
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
+            losses['class_error'] = 100 - \
+                accuracy(src_logits[idx], target_classes_o)[0]
 
         return losses
 
     def match_for_single_frame(self, outputs: dict):
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        outputs_without_aux = {k: v for k,
+                               v in outputs.items() if k != 'aux_outputs'}
 
-        gt_instances_i = self.gt_instances[self._current_frame_idx]  # gt instances of i-th image.
+        # gt instances of i-th image.
+        gt_instances_i = self.gt_instances[self._current_frame_idx]
         track_instances: Instances = outputs_without_aux['track_instances']
-        pred_logits_i = track_instances.pred_logits  # predicted logits of i-th image.
-        pred_boxes_i = track_instances.pred_boxes  # predicted boxes of i-th image.
+        # predicted logits of i-th image.
+        pred_logits_i = track_instances.pred_logits
+        # predicted boxes of i-th image.
+        pred_boxes_i = track_instances.pred_boxes
 
         obj_idxes = gt_instances_i.obj_ids
         outputs_i = {
@@ -190,8 +204,9 @@ class ClipMatcher(SetCriterion):
         i, j = torch.where(track_instances.obj_idxes[:, None] == obj_idxes)
         track_instances.matched_gt_idxes[i] = j
 
-        full_track_idxes = torch.arange(len(track_instances), dtype=torch.long, device=pred_logits_i.device)
-        matched_track_idxes = (track_instances.obj_idxes >= 0)  # occu 
+        full_track_idxes = torch.arange(
+            len(track_instances), dtype=torch.long, device=pred_logits_i.device)
+        matched_track_idxes = (track_instances.obj_idxes >= 0)  # occu
         prev_matched_indices = torch.stack(
             [full_track_idxes[matched_track_idxes], track_instances.matched_gt_idxes[matched_track_idxes]], dim=1)
 
@@ -203,15 +218,17 @@ class ClipMatcher(SetCriterion):
         tgt_indexes = track_instances.matched_gt_idxes
         tgt_indexes = tgt_indexes[tgt_indexes != -1]
 
-        tgt_state = torch.zeros(len(gt_instances_i), device=pred_logits_i.device)
+        tgt_state = torch.zeros(len(gt_instances_i),
+                                device=pred_logits_i.device)
         tgt_state[tgt_indexes] = 1
-        untracked_tgt_indexes = torch.arange(len(gt_instances_i), device=pred_logits_i.device)[tgt_state == 0]
+        untracked_tgt_indexes = torch.arange(
+            len(gt_instances_i), device=pred_logits_i.device)[tgt_state == 0]
         # untracked_tgt_indexes = select_unmatched_indexes(tgt_indexes, len(gt_instances_i))
         untracked_gt_instances = gt_instances_i[untracked_tgt_indexes]
 
         def match_for_single_decoder_layer(unmatched_outputs, matcher):
             new_track_indices = matcher(unmatched_outputs,
-                                             [untracked_gt_instances])  # list[tuple(src_idx, tgt_idx)]
+                                        [untracked_gt_instances])  # list[tuple(src_idx, tgt_idx)]
 
             src_idx = new_track_indices[0][0]
             tgt_idx = new_track_indices[0][1]
@@ -225,23 +242,29 @@ class ClipMatcher(SetCriterion):
             'pred_logits': track_instances.pred_logits[unmatched_track_idxes].unsqueeze(0),
             'pred_boxes': track_instances.pred_boxes[unmatched_track_idxes].unsqueeze(0),
         }
-        new_matched_indices = match_for_single_decoder_layer(unmatched_outputs, self.matcher)
+        new_matched_indices = match_for_single_decoder_layer(
+            unmatched_outputs, self.matcher)
 
         # step5. update obj_idxes according to the new matching result.
-        track_instances.obj_idxes[new_matched_indices[:, 0]] = gt_instances_i.obj_ids[new_matched_indices[:, 1]].long()
-        track_instances.matched_gt_idxes[new_matched_indices[:, 0]] = new_matched_indices[:, 1]
+        track_instances.obj_idxes[new_matched_indices[:, 0]
+                                  ] = gt_instances_i.obj_ids[new_matched_indices[:, 1]].long()
+        track_instances.matched_gt_idxes[new_matched_indices[:, 0]
+                                         ] = new_matched_indices[:, 1]
 
         # step6. calculate iou.
-        active_idxes = (track_instances.obj_idxes >= 0) & (track_instances.matched_gt_idxes >= 0)
+        active_idxes = (track_instances.obj_idxes >= 0) & (
+            track_instances.matched_gt_idxes >= 0)
         active_track_boxes = track_instances.pred_boxes[active_idxes]
         if len(active_track_boxes) > 0:
             gt_boxes = gt_instances_i.boxes[track_instances.matched_gt_idxes[active_idxes]]
             active_track_boxes = box_ops.box_cxcywh_to_xyxy(active_track_boxes)
             gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
-            track_instances.iou[active_idxes] = matched_boxlist_iou(Boxes(active_track_boxes), Boxes(gt_boxes))
+            track_instances.iou[active_idxes] = matched_boxlist_iou(
+                Boxes(active_track_boxes), Boxes(gt_boxes))
 
         # step7. merge the unmatched pairs and the matched pairs.
-        matched_indices = torch.cat([new_matched_indices, prev_matched_indices], dim=0)
+        matched_indices = torch.cat(
+            [new_matched_indices, prev_matched_indices], dim=0)
 
         # step8. calculate losses.
         self.num_samples += len(gt_instances_i) + num_disappear_track
@@ -250,7 +273,8 @@ class ClipMatcher(SetCriterion):
             new_track_loss = self.get_loss(loss,
                                            outputs=outputs_i,
                                            gt_instances=[gt_instances_i],
-                                           indices=[(matched_indices[:, 0], matched_indices[:, 1])],
+                                           indices=[
+                                               (matched_indices[:, 0], matched_indices[:, 1])],
                                            num_boxes=1)
             self.losses_dict.update(
                 {'frame_{}_{}'.format(self._current_frame_idx, key): value for key, value in new_track_loss.items()})
@@ -261,8 +285,10 @@ class ClipMatcher(SetCriterion):
                     'pred_logits': aux_outputs['pred_logits'][0, unmatched_track_idxes].unsqueeze(0),
                     'pred_boxes': aux_outputs['pred_boxes'][0, unmatched_track_idxes].unsqueeze(0),
                 }
-                new_matched_indices_layer = match_for_single_decoder_layer(unmatched_outputs_layer, self.matcher)
-                matched_indices_layer = torch.cat([new_matched_indices_layer, prev_matched_indices], dim=0)
+                new_matched_indices_layer = match_for_single_decoder_layer(
+                    unmatched_outputs_layer, self.matcher)
+                matched_indices_layer = torch.cat(
+                    [new_matched_indices_layer, prev_matched_indices], dim=0)
                 for loss in self.losses:
                     if loss == 'masks':
                         # Intermediate masks losses are too costly to compute, we ignore them.
@@ -270,7 +296,8 @@ class ClipMatcher(SetCriterion):
                     l_dict = self.get_loss(loss,
                                            aux_outputs,
                                            gt_instances=[gt_instances_i],
-                                           indices=[(matched_indices_layer[:, 0], matched_indices_layer[:, 1])],
+                                           indices=[
+                                               (matched_indices_layer[:, 0], matched_indices_layer[:, 1])],
                                            num_boxes=1, )
                     self.losses_dict.update(
                         {'frame_{}_aux{}_{}'.format(self._current_frame_idx, i, key): value for key, value in
@@ -280,10 +307,10 @@ class ClipMatcher(SetCriterion):
             for i, aux_outputs in enumerate(outputs['ps_outputs']):
                 ar = torch.arange(len(gt_instances_i), device=obj_idxes.device)
                 l_dict = self.get_loss('boxes',
-                                        aux_outputs,
-                                        gt_instances=[gt_instances_i],
-                                        indices=[(ar, ar)],
-                                        num_boxes=1, )
+                                       aux_outputs,
+                                       gt_instances=[gt_instances_i],
+                                       indices=[(ar, ar)],
+                                       num_boxes=1, )
                 self.losses_dict.update(
                     {'frame_{}_ps{}_{}'.format(self._current_frame_idx, i, key): value for key, value in
                         l_dict.items()})
@@ -312,21 +339,27 @@ class RuntimeTrackerBase(object):
     def update(self, track_instances: Instances):
         device = track_instances.obj_idxes.device
 
-        track_instances.disappear_time[track_instances.scores >= self.score_thresh] = 0
-        new_obj = (track_instances.obj_idxes == -1) & (track_instances.scores >= self.score_thresh)
-        disappeared_obj = (track_instances.obj_idxes >= 0) & (track_instances.scores < self.filter_score_thresh)
+        track_instances.disappear_time[track_instances.scores >=
+                                       self.score_thresh] = 0
+        new_obj = (track_instances.obj_idxes == -
+                   1) & (track_instances.scores >= self.score_thresh)
+        disappeared_obj = (track_instances.obj_idxes >= 0) & (
+            track_instances.scores < self.filter_score_thresh)
         num_new_objs = new_obj.sum().item()
 
-        track_instances.obj_idxes[new_obj] = self.max_obj_id + torch.arange(num_new_objs, device=device)
+        track_instances.obj_idxes[new_obj] = self.max_obj_id + \
+            torch.arange(num_new_objs, device=device)
         self.max_obj_id += num_new_objs
 
         track_instances.disappear_time[disappeared_obj] += 1
-        to_del = disappeared_obj & (track_instances.disappear_time >= self.miss_tolerance)
+        to_del = disappeared_obj & (
+            track_instances.disappear_time >= self.miss_tolerance)
         track_instances.obj_idxes[to_del] = -1
 
 
 class TrackerPostProcess(nn.Module):
     """ This module converts the model's output into the format expected by the coco api"""
+
     def __init__(self):
         super().__init__()
 
@@ -406,7 +439,8 @@ class MOTR(nn.Module):
                 ))
             for _ in range(num_feature_levels - num_backbone_outs):
                 input_proj_list.append(nn.Sequential(
-                    nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
+                    nn.Conv2d(in_channels, hidden_dim,
+                              kernel_size=3, stride=2, padding=1),
                     nn.GroupNorm(32, hidden_dim),
                 ))
                 in_channels = hidden_dim
@@ -414,7 +448,8 @@ class MOTR(nn.Module):
         else:
             self.input_proj = nn.ModuleList([
                 nn.Sequential(
-                    nn.Conv2d(backbone.num_channels[0], hidden_dim, kernel_size=1),
+                    nn.Conv2d(
+                        backbone.num_channels[0], hidden_dim, kernel_size=1),
                     nn.GroupNorm(32, hidden_dim),
                 )])
         self.backbone = backbone
@@ -433,17 +468,21 @@ class MOTR(nn.Module):
         nn.init.uniform_(self.position.weight.data, 0, 1)
 
         # if two-stage, the last class_embed and bbox_embed is for region proposal generation
-        num_pred = (transformer.decoder.num_layers + 1) if two_stage else transformer.decoder.num_layers
+        num_pred = (transformer.decoder.num_layers +
+                    1) if two_stage else transformer.decoder.num_layers
         if with_box_refine:
             self.class_embed = _get_clones(self.class_embed, num_pred)
             self.bbox_embed = _get_clones(self.bbox_embed, num_pred)
-            nn.init.constant_(self.bbox_embed[0].layers[-1].bias.data[2:], -2.0)
+            nn.init.constant_(
+                self.bbox_embed[0].layers[-1].bias.data[2:], -2.0)
             # hack implementation for iterative bounding box refinement
             self.transformer.decoder.bbox_embed = self.bbox_embed
         else:
             nn.init.constant_(self.bbox_embed.layers[-1].bias.data[2:], -2.0)
-            self.class_embed = nn.ModuleList([self.class_embed for _ in range(num_pred)])
-            self.bbox_embed = nn.ModuleList([self.bbox_embed for _ in range(num_pred)])
+            self.class_embed = nn.ModuleList(
+                [self.class_embed for _ in range(num_pred)])
+            self.bbox_embed = nn.ModuleList(
+                [self.bbox_embed for _ in range(num_pred)])
             self.transformer.decoder.bbox_embed = None
         if two_stage:
             # hack implementation for two-stage
@@ -464,22 +503,43 @@ class MOTR(nn.Module):
             track_instances.ref_pts = self.position.weight
             track_instances.query_pos = self.query_embed.weight
         else:
-            track_instances.ref_pts = torch.cat([self.position.weight, proposals[:, :4]])
-            track_instances.query_pos = torch.cat([self.query_embed.weight, pos2posemb(proposals[:, 4:], d_model) + self.yolox_embed.weight])
-        track_instances.output_embedding = torch.zeros((len(track_instances), d_model), device=device)
-        track_instances.obj_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)
-        track_instances.matched_gt_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)
-        track_instances.disappear_time = torch.zeros((len(track_instances), ), dtype=torch.long, device=device)
-        track_instances.iou = torch.ones((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.track_scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.pred_boxes = torch.zeros((len(track_instances), 4), dtype=torch.float, device=device)
-        track_instances.pred_logits = torch.zeros((len(track_instances), self.num_classes), dtype=torch.float, device=device)
+            track_instances.ref_pts = torch.cat(
+                [self.position.weight, proposals[:, :4]])
+            track_instances.query_pos = torch.cat([self.query_embed.weight, pos2posemb(
+                proposals[:, 4:], d_model) + self.yolox_embed.weight])
+        track_instances.output_embedding = torch.zeros(
+            (len(track_instances), d_model), device=device)
+        track_instances.obj_idxes = torch.full(
+            (len(track_instances),), -1, dtype=torch.long, device=device)
+        track_instances.matched_gt_idxes = torch.full(
+            (len(track_instances),), -1, dtype=torch.long, device=device)
+        track_instances.disappear_time = torch.zeros(
+            (len(track_instances), ), dtype=torch.long, device=device)
+        track_instances.iou = torch.ones(
+            (len(track_instances),), dtype=torch.float, device=device)
+        track_instances.scores = torch.zeros(
+            (len(track_instances),), dtype=torch.float, device=device)
+        track_instances.track_scores = torch.zeros(
+            (len(track_instances),), dtype=torch.float, device=device)
+        track_instances.pred_boxes = torch.zeros(
+            (len(track_instances), 4), dtype=torch.float, device=device)
+        track_instances.pred_logits = torch.zeros(
+            (len(track_instances), self.num_classes), dtype=torch.float, device=device)
+
+        track_instances.frame_idx = torch.zeros(
+            (len(track_instances),), dtype=torch.long, device=device)
 
         mem_bank_len = self.mem_bank_len
-        track_instances.mem_bank = torch.zeros((len(track_instances), mem_bank_len, d_model), dtype=torch.float32, device=device)
-        track_instances.mem_padding_mask = torch.ones((len(track_instances), mem_bank_len), dtype=torch.bool, device=device)
-        track_instances.save_period = torch.zeros((len(track_instances), ), dtype=torch.float32, device=device)
+        track_instances.mem_bank = torch.zeros(
+            (len(track_instances), mem_bank_len, d_model), dtype=torch.float32, device=device)
+        track_instances.mem_padding_mask = torch.ones(
+            (len(track_instances), mem_bank_len), dtype=torch.bool, device=device)
+        track_instances.save_period = torch.zeros(
+            (len(track_instances), ), dtype=torch.float32, device=device)
+        track_instances.accum_dist = torch.zeros(
+            (len(track_instances), ), dtype=torch.float32, device=device)
+        track_instances.mem_frames_idx = torch.zeros(
+            (len(track_instances), mem_bank_len), dtype=torch.long, device=device)
 
         return track_instances.to(self.query_embed.weight.device)
 
@@ -515,7 +575,8 @@ class MOTR(nn.Module):
                 else:
                     src = self.input_proj[l](srcs[-1])
                 m = samples.mask
-                mask = F.interpolate(m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
+                mask = F.interpolate(
+                    m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
                 pos_l = self.backbone[1](NestedTensor(src, mask)).to(src.dtype)
                 srcs.append(src)
                 masks.append(mask)
@@ -526,7 +587,8 @@ class MOTR(nn.Module):
             ps_tgt = self.refine_embed.weight.expand(gtboxes.size(0), -1)
             query_embed = torch.cat([track_instances.query_pos, ps_tgt])
             ref_pts = torch.cat([track_instances.ref_pts, gtboxes])
-            attn_mask = torch.zeros((len(ref_pts), len(ref_pts)), dtype=bool, device=ref_pts.device)
+            attn_mask = torch.zeros(
+                (len(ref_pts), len(ref_pts)), dtype=bool, device=ref_pts.device)
             attn_mask[:n_dt, n_dt:] = True
         else:
             query_embed = track_instances.query_pos
@@ -558,10 +620,18 @@ class MOTR(nn.Module):
         outputs_class = torch.stack(outputs_classes)
         outputs_coord = torch.stack(outputs_coords)
 
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+        out = {'pred_logits': outputs_class[-1],
+               'pred_boxes': outputs_coord[-1]}
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+            out['aux_outputs'] = self._set_aux_loss(
+                outputs_class, outputs_coord)
         out['hs'] = hs[-1]
+        last_center = outputs_coord[-1][..., :2]
+        init_center = outputs_coord[0][..., :2]
+        last_wh_ratio = outputs_coord[-1][..., 2] / (outputs_coord[-1][..., 3] + 1e-6)
+        init_wh_ratio = outputs_coord[0][..., 2] / (outputs_coord[0][..., 3] + 1e-6)
+        out['mov_dist'] = torch.norm(last_center - init_center, dim=-1)
+        out['deform'] = abs(last_wh_ratio - init_wh_ratio)
         return out
 
     def _post_process_single_image(self, frame_res, track_instances, is_last):
@@ -572,6 +642,7 @@ class MOTR(nn.Module):
             frame_res['hs'] = frame_res['hs'][:, :n_ins]
             frame_res['pred_logits'] = frame_res['pred_logits'][:, :n_ins]
             frame_res['pred_boxes'] = frame_res['pred_boxes'][:, :n_ins]
+            frame_res['mov_dist'] = frame_res['mov_dist'][:n_ins]
             ps_outputs = [{'pred_logits': ps_logits, 'pred_boxes': ps_boxes}]
             for aux_outputs in frame_res['aux_outputs']:
                 ps_outputs.append({
@@ -584,7 +655,8 @@ class MOTR(nn.Module):
 
         with torch.no_grad():
             if self.training:
-                track_scores = frame_res['pred_logits'][0, :].sigmoid().max(dim=-1).values
+                track_scores = frame_res['pred_logits'][0, :].sigmoid().max(
+                    dim=-1).values
             else:
                 track_scores = frame_res['pred_logits'][0, :, 0].sigmoid()
 
@@ -592,6 +664,8 @@ class MOTR(nn.Module):
         track_instances.pred_logits = frame_res['pred_logits'][0]
         track_instances.pred_boxes = frame_res['pred_boxes'][0]
         track_instances.output_embedding = frame_res['hs'][0]
+        track_instances.frame_idx += 1
+        track_instances.accum_dist += frame_res['mov_dist'][0]
         if self.training:
             # the track id will be assigned by the mather.
             frame_res['track_instances'] = track_instances
@@ -608,6 +682,7 @@ class MOTR(nn.Module):
             frame_res['track_instances'] = out_track_instances
         else:
             frame_res['track_instances'] = None
+
         return frame_res
 
     @torch.no_grad()
@@ -623,7 +698,6 @@ class MOTR(nn.Module):
         res = self._forward_single_image(img,
                                          track_instances=track_instances)
         res = self._post_process_single_image(res, track_instances, False)
-
         track_instances = res['track_instances']
         track_instances = self.post_process(track_instances, ori_img_size)
         ret = {'track_instances': track_instances}
@@ -674,13 +748,17 @@ class MOTR(nn.Module):
                         frame_res['pred_logits'],
                         frame_res['pred_boxes'],
                         frame_res['hs'],
-                        *[aux['pred_logits'] for aux in frame_res['aux_outputs']],
+                        *[aux['pred_logits']
+                            for aux in frame_res['aux_outputs']],
                         *[aux['pred_boxes'] for aux in frame_res['aux_outputs']]
                     )
 
-                args = [frame, gtboxes] + [track_instances.get(k) for k in keys]
-                params = tuple((p for p in self.parameters() if p.requires_grad))
-                tmp = checkpoint.CheckpointFunction.apply(fn, len(args), *args, *params)
+                args = [frame, gtboxes] + \
+                    [track_instances.get(k) for k in keys]
+                params = tuple(
+                    (p for p in self.parameters() if p.requires_grad))
+                tmp = checkpoint.CheckpointFunction.apply(
+                    fn, len(args), *args, *params)
                 frame_res = {
                     'pred_logits': tmp[0],
                     'pred_boxes': tmp[1],
@@ -692,10 +770,13 @@ class MOTR(nn.Module):
                 }
             else:
                 frame = nested_tensor_from_tensor_list([frame])
-                frame_res = self._forward_single_image(frame, track_instances, gtboxes)
-            frame_res = self._post_process_single_image(frame_res, track_instances, is_last)
+                frame_res = self._forward_single_image(
+                    frame, track_instances, gtboxes)
+            frame_res = self._post_process_single_image(
+                frame_res, track_instances, is_last)
 
             track_instances = frame_res['track_instances']
+            print(len(track_instances))
             outputs['pred_logits'].append(frame_res['pred_logits'])
             outputs['pred_boxes'].append(frame_res['pred_boxes'])
 
@@ -724,7 +805,8 @@ def build(args):
     transformer = build_deforamble_transformer(args)
     d_model = transformer.d_model
     hidden_dim = args.dim_feedforward
-    query_interaction_layer = build_query_interaction_layer(args, args.query_interaction_layer, d_model, hidden_dim, d_model*2)
+    query_interaction_layer = build_query_interaction_layer(
+        args, args.query_interaction_layer, d_model, hidden_dim, d_model*2)
 
     img_matcher = build_matcher(args)
     num_frames_per_batch = max(args.sampler_lengths)
@@ -751,11 +833,13 @@ def build(args):
     if args.memory_bank_type is not None and len(args.memory_bank_type) > 0:
         memory_bank = build_memory_bank(args, d_model, hidden_dim, d_model * 2)
         for i in range(num_frames_per_batch):
-            weight_dict.update({"frame_{}_track_loss_ce".format(i): args.cls_loss_coef})
+            weight_dict.update(
+                {"frame_{}_track_loss_ce".format(i): args.cls_loss_coef})
     else:
         memory_bank = None
     losses = ['labels', 'boxes']
-    criterion = ClipMatcher(num_classes, matcher=img_matcher, weight_dict=weight_dict, losses=losses)
+    criterion = ClipMatcher(num_classes, matcher=img_matcher,
+                            weight_dict=weight_dict, losses=losses)
     criterion.to(device)
     postprocessors = {}
     model = MOTR(

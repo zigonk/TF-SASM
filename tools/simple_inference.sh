@@ -7,5 +7,13 @@
 set -x
 set -o pipefail
 
-args=$(cat configs/motrv2.args)
-python3 submit_dance.py ${args} --exp_name tracker --resume $1
+
+
+DATA_DIR=DanceTrack
+DATA_SPLIT=val
+
+EXP_NAME=tracker_sam_occlusion_discard_v2
+args=$(cat configs/motrv2_sam_occlusion_discard.args)
+CUDA_VISIBLE_DEVICES=0 python3 submit_dance.py ${args} --exp_name outputs/${EXP_NAME}-${DATA_SPLIT} --resume $1 --data_dir ${DATA_DIR}/${DATA_SPLIT}
+
+

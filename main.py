@@ -9,7 +9,6 @@
 # ------------------------------------------------------------------------
 
 
-
 import argparse
 import datetime
 import random
@@ -29,11 +28,14 @@ from models import build_model
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Deformable DETR Detector', add_help=False)
+    parser = argparse.ArgumentParser(
+        'Deformable DETR Detector', add_help=False)
     parser.add_argument('--lr', default=2e-4, type=float)
-    parser.add_argument('--lr_backbone_names', default=["backbone.0"], type=str, nargs='+')
+    parser.add_argument('--lr_backbone_names',
+                        default=["backbone.0"], type=str, nargs='+')
     parser.add_argument('--lr_backbone', default=2e-5, type=float)
-    parser.add_argument('--lr_linear_proj_names', default=['reference_points', 'sampling_offsets',], type=str, nargs='+')
+    parser.add_argument('--lr_linear_proj_names',
+                        default=['reference_points', 'sampling_offsets',], type=str, nargs='+')
     parser.add_argument('--lr_linear_proj_mult', default=0.1, type=float)
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
@@ -49,10 +51,10 @@ def get_args_parser():
     parser.add_argument('--sgd', action='store_true')
 
     # Variants of Deformable DETR
-    parser.add_argument('--with_box_refine', default=False, action='store_true')
+    parser.add_argument('--with_box_refine',
+                        default=False, action='store_true')
     parser.add_argument('--two_stage', default=False, action='store_true')
     parser.add_argument('--accurate_ratio', default=False, action='store_true')
-
 
     # Model parameters
     parser.add_argument('--frozen_weights', type=str, default=None,
@@ -69,7 +71,8 @@ def get_args_parser():
                         help="Type of positional embedding to use on top of the image features")
     parser.add_argument('--position_embedding_scale', default=2 * np.pi, type=float,
                         help="position / size * scale")
-    parser.add_argument('--num_feature_levels', default=4, type=int, help='number of feature levels')
+    parser.add_argument('--num_feature_levels', default=4,
+                        type=int, help='number of feature levels')
 
     # * Transformer
     parser.add_argument('--enc_layers', default=6, type=int,
@@ -88,7 +91,8 @@ def get_args_parser():
                         help="Number of query slots")
     parser.add_argument('--dec_n_points', default=4, type=int)
     parser.add_argument('--enc_n_points', default=4, type=int)
-    parser.add_argument('--decoder_cross_self', default=False, action='store_true')
+    parser.add_argument('--decoder_cross_self',
+                        default=False, action='store_true')
     parser.add_argument('--sigmoid_attn', default=False, action='store_true')
     parser.add_argument('--crop', action='store_true')
     parser.add_argument('--cj', action='store_true')
@@ -128,7 +132,8 @@ def get_args_parser():
     parser.add_argument('--dataset_file', default='coco')
     parser.add_argument('--gt_file_train', type=str)
     parser.add_argument('--gt_file_val', type=str)
-    parser.add_argument('--coco_path', default='/data/workspace/detectron2/datasets/coco/', type=str)
+    parser.add_argument(
+        '--coco_path', default='/data/workspace/detectron2/datasets/coco/', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
@@ -143,11 +148,13 @@ def get_args_parser():
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--vis', action='store_true')
     parser.add_argument('--num_workers', default=2, type=int)
-    parser.add_argument('--pretrained', default=None, help='resume from checkpoint')
-    parser.add_argument('--cache_mode', default=False, action='store_true', help='whether to cache images on memory')
+    parser.add_argument('--pretrained', default=None,
+                        help='resume from checkpoint')
+    parser.add_argument('--cache_mode', default=False,
+                        action='store_true', help='whether to cache images on memory')
 
     # end-to-end mot settings.
-    parser.add_argument('--mot_path', default='/data/Dataset/mot', type=str)
+    parser.add_argument('--mot_path', default='./data/Dataset/mot', type=str)
     parser.add_argument('--det_db', default='', type=str)
     parser.add_argument('--input_video', default='figs/demo.mp4', type=str)
     parser.add_argument('--data_txt_path_train',
@@ -173,7 +180,12 @@ def get_args_parser():
     parser.add_argument('--memory_bank_score_thresh', type=float, default=0.)
     parser.add_argument('--memory_bank_len', type=int, default=4)
     parser.add_argument('--memory_bank_type', type=str, default=None)
-    parser.add_argument('--memory_bank_with_self_attn', action='store_true', default=False)
+    parser.add_argument('--memory_bank_with_self_attn',
+                        action='store_true', default=False)
+
+    parser.add_argument('--memory_bank_max_dist', type=float, default=0.2)
+    parser.add_argument('--memory_bank_max_frame_gap', type=int, default=10)
+    parser.add_argument('--memory_bank_iou_threshold', type=float, default=0.5)
 
     parser.add_argument('--use_checkpoint', action='store_true', default=False)
     parser.add_argument('--query_denoise', type=float, default=0.)
@@ -200,7 +212,8 @@ def main(args):
     model.to(device)
 
     model_without_ddp = model
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_parameters = sum(p.numel()
+                       for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
 
     dataset_train = build_dataset(image_set='train', args=args)
@@ -253,7 +266,8 @@ def main(args):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
     if args.frozen_weights is not None:
@@ -270,8 +284,10 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-        missing_keys, unexpected_keys = model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
-        unexpected_keys = [k for k in unexpected_keys if not (k.endswith('total_params') or k.endswith('total_ops'))]
+        missing_keys, unexpected_keys = model_without_ddp.load_state_dict(
+            checkpoint['model'], strict=False)
+        unexpected_keys = [k for k in unexpected_keys if not (
+            k.endswith('total_params') or k.endswith('total_ops'))]
         if len(missing_keys) > 0:
             print('Missing Keys: {}'.format(missing_keys))
         if len(unexpected_keys) > 0:
@@ -290,7 +306,8 @@ def main(args):
             if args.override_resumed_lr_drop:
                 print('Warning: (hack) args.override_resumed_lr_drop is set to True, so args.lr_drop would override lr_drop in resumed lr_scheduler.')
                 lr_scheduler.step_size = args.lr_drop
-                lr_scheduler.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
+                lr_scheduler.base_lrs = list(
+                    map(lambda group: group['initial_lr'], optimizer.param_groups))
             lr_scheduler.step(lr_scheduler.last_epoch)
             args.start_epoch = checkpoint['epoch'] + 1
 
@@ -308,7 +325,8 @@ def main(args):
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 5 epochs
             if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.save_period == 0 or (((args.epochs >= 100 and (epoch + 1) > 100) or args.epochs < 100) and (epoch + 1) % 5 == 0):
-                checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
+                checkpoint_paths.append(
+                    output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
                 utils.save_on_master({
                     'model': model_without_ddp.state_dict(),
@@ -325,7 +343,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Deformable DETR training and evaluation script', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser(
+        'Deformable DETR training and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)

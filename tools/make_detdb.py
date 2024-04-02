@@ -13,19 +13,22 @@ from tqdm import tqdm
 det_db = {}
 to_cache = []
 
-for file in glob("/data/Dataset/mot/crowdhuman/train_image/*.txt"):
+for file in glob("data/Dataset/mot/crowdhuman/train_image/*.txt"):
     to_cache.append(file)
 
-for file in glob("/data/Dataset/mot/DanceTrack/*/*/img1/*.txt"):
+for file in glob("data/Dataset/mot/DanceTrack/*/*/img1/*.txt"):
     to_cache.append(file)
 
-for file in glob("/data/Dataset/mot/MOT17/images/*/*/img1/*.txt"):
+for file in glob("data/Dataset/mot/DanceTrack_lowfps/*/*/img1/*.txt"):
     to_cache.append(file)
 
-for file in glob("/data/Dataset/mot/MOT20/train/*/img1/*.txt"):
+for file in glob("data/Dataset/mot/MOT17/images/*/*/img1/*.txt"):
     to_cache.append(file)
 
-for file in glob("/data/Dataset/mot/HIE20/train/*/img1/*.txt"):
+for file in glob("data/Dataset/mot/MOT20/train/*/img1/*.txt"):
+    to_cache.append(file)
+
+for file in glob("data/Dataset/mot/HIE20/train/*/img1/*.txt"):
     to_cache.append(file)
 
 pbar = tqdm(total=len(to_cache))
@@ -42,6 +45,6 @@ with ThreadPoolExecutor(max_workers=48) as exe:
     for file in to_cache:
         exe.submit(cache, file)
 
-with open("/data/Dataset/mot/det_db_oc_sort_full.json", 'w') as f:
+with open("data/Dataset/mot/det_db_oc_sort_full.json", 'w') as f:
     json.dump(det_db, f)
 

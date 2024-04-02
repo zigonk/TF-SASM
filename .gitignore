@@ -6,3 +6,6 @@ build/
 *.egg
 *.egg-info
 *.mp4
+
+outputs
+*det_db*.json

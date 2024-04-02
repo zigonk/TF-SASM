@@ -50,10 +50,10 @@ class ListImgDataset(Dataset):
         for line in self.det_db[f_path[:-4] + '.txt']:
             l, t, w, h, s = list(map(float, line.split(',')))
             proposals.append([(l + w / 2) / im_w,
-                                (t + h / 2) / im_h,
-                                w / im_w,
-                                h / im_h,
-                                s])
+                              (t + h / 2) / im_h,
+                              w / im_w,
+                              h / im_h,
+                              s])
         return cur_img, torch.as_tensor(proposals).reshape(-1, 5)
 
     def init_img(self, img, proposals):
@@ -71,7 +71,7 @@ class ListImgDataset(Dataset):
 
     def __len__(self):
         return len(self.img_list)
-    
+
     def __getitem__(self, index):
         img, proposals = self.load_img_from_file(self.img_list[index])
         return self.init_img(img, proposals)
@@ -85,13 +85,18 @@ class Detector(object):
         self.vid = vid
         self.seq_num = os.path.basename(vid)
         img_list = os.listdir(os.path.join(self.args.mot_path, vid, 'img1'))
-        img_list = [os.path.join(vid, 'img1', i) for i in img_list if 'jpg' in i]
+        img_list = [os.path.join(vid, 'img1', i)
+                    for i in img_list if 'jpg' in i]
 
         self.img_list = sorted(img_list)
         self.img_len = len(self.img_list)
 
         self.predict_path = os.path.join(self.args.output_dir, args.exp_name)
         os.makedirs(self.predict_path, exist_ok=True)
+        # Export args as format --key value
+        with open(os.path.join(args.output_dir, args.exp_name, 'exp.args'), 'w') as f:
+            for k, v in vars(args).items():
+                f.write(f'--{k} {v}\n')
 
     @staticmethod
     def filter_dt_by_score(dt_instances: Instances, prob_threshold: float) -> Instances:
@@ -111,9 +116,10 @@ class Detector(object):
         total_occlusion_dts = 0
 
         track_instances = None
-        with open(os.path.join(self.args.mot_path, self.args.det_db)) as f:
+        with open(os.path.join(self.args.mot_path, 'det_db', self.args.det_db)) as f:
             det_db = json.load(f)
-        loader = DataLoader(ListImgDataset(self.args.mot_path, self.img_list, det_db), 1, num_workers=2)
+        loader = DataLoader(ListImgDataset(
+            self.args.mot_path, self.img_list, det_db), 1, num_workers=2)
         lines = []
         for i, data in enumerate(tqdm(loader)):
             cur_img, ori_img, proposals = [d[0] for d in data]
@@ -125,13 +131,15 @@ class Detector(object):
                 track_instances.remove('labels')
             seq_h, seq_w, _ = ori_img.shape
 
-            res = self.detr.inference_single_image(cur_img, (seq_h, seq_w), track_instances, proposals)
+            res = self.detr.inference_single_image(
+                cur_img, (seq_h, seq_w), track_instances, proposals)
             track_instances = res['track_instances']
 
             dt_instances = deepcopy(track_instances)
 
             # filter det instances by score.
-            dt_instances = self.filter_dt_by_score(dt_instances, prob_threshold)
+            dt_instances = self.filter_dt_by_score(
+                dt_instances, prob_threshold)
             dt_instances = self.filter_dt_by_area(dt_instances, area_threshold)
 
             total_dts += len(dt_instances)
@@ -145,10 +153,13 @@ class Detector(object):
                     continue
                 x1, y1, x2, y2 = xyxy
                 w, h = x2 - x1, y2 - y1
-                lines.append(save_format.format(frame=i + 1, id=track_id, x1=x1, y1=y1, w=w, h=h))
+                lines.append(save_format.format(
+                    frame=i + 1, id=track_id, x1=x1, y1=y1, w=w, h=h))
         with open(os.path.join(self.predict_path, f'{self.seq_num}.txt'), 'w') as f:
             f.writelines(lines)
-        print("totally {} dts {} occlusion dts".format(total_dts, total_occlusion_dts))
+        print("totally {} dts {} occlusion dts".format(
+            total_dts, total_occlusion_dts))
+
 
 class RuntimeTrackerBase(object):
     def __init__(self, score_thresh=0.6, filter_score_thresh=0.5, miss_tolerance=10):
@@ -163,25 +174,32 @@ class RuntimeTrackerBase(object):
     def update(self, track_instances: Instances):
         device = track_instances.obj_idxes.device
 
-        track_instances.disappear_time[track_instances.scores >= self.score_thresh] = 0
-        new_obj = (track_instances.obj_idxes == -1) & (track_instances.scores >= self.score_thresh)
-        disappeared_obj = (track_instances.obj_idxes >= 0) & (track_instances.scores < self.filter_score_thresh)
+        track_instances.disappear_time[track_instances.scores >=
+                                       self.score_thresh] = 0
+        new_obj = (track_instances.obj_idxes == -
+                   1) & (track_instances.scores >= self.score_thresh)
+        disappeared_obj = (track_instances.obj_idxes >= 0) & (
+            track_instances.scores < self.filter_score_thresh)
         num_new_objs = new_obj.sum().item()
 
-        track_instances.obj_idxes[new_obj] = self.max_obj_id + torch.arange(num_new_objs, device=device)
+        track_instances.obj_idxes[new_obj] = self.max_obj_id + \
+            torch.arange(num_new_objs, device=device)
         self.max_obj_id += num_new_objs
 
         track_instances.disappear_time[disappeared_obj] += 1
-        to_del = disappeared_obj & (track_instances.disappear_time >= self.miss_tolerance)
+        to_del = disappeared_obj & (
+            track_instances.disappear_time >= self.miss_tolerance)
         track_instances.obj_idxes[to_del] = -1
 
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser('DETR training and evaluation script', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser(
+        'DETR training and evaluation script', parents=[get_args_parser()])
     parser.add_argument('--score_threshold', default=0.5, type=float)
     parser.add_argument('--update_score_threshold', default=0.5, type=float)
     parser.add_argument('--miss_tolerance', default=20, type=int)
+    parser.add_argument('--data_dir', default='data', type=str)
     args = parser.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -189,14 +207,15 @@ if __name__ == '__main__':
     # load model and weights
     detr, _, _ = build_model(args)
     detr.track_embed.score_thr = args.update_score_threshold
-    detr.track_base = RuntimeTrackerBase(args.score_threshold, args.score_threshold, args.miss_tolerance)
+    detr.track_base = RuntimeTrackerBase(
+        args.score_threshold, args.score_threshold, args.miss_tolerance)
     checkpoint = torch.load(args.resume, map_location='cpu')
     detr = load_model(detr, args.resume)
     detr.eval()
     detr = detr.cuda()
 
-    # '''for MOT17 submit''' 
-    sub_dir = 'DanceTrack/test'
+    # '''for MOT17 submit'''
+    sub_dir = args.data_dir
     seq_nums = os.listdir(os.path.join(args.mot_path, sub_dir))
     if 'seqmap' in seq_nums:
         seq_nums.remove('seqmap')
