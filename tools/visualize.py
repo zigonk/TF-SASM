@@ -76,10 +76,11 @@ def process(trk_path, img_list, output="output.mp4"):
 
 
 if __name__ == '__main__':
-    METHOD="sam_occlusion_discard_v2-val"
+    METHOD="sam_occlusion_discard-test"
     track_dir = "./outputs/tracker_" + METHOD + "/"
     method_name = "motrv2_" + METHOD
     DATASET_NAME = "DanceTrack"
+    DATA_SPLIT = "test"
     os.makedirs(f'visualize/{method_name}', exist_ok=True)
     jobs = os.listdir(track_dir)
     rank = int(os.environ.get('RLAUNCH_REPLICA', '0'))
@@ -87,12 +88,13 @@ if __name__ == '__main__':
     jobs = sorted(jobs)[rank::ws]
     for seq in jobs:
         print(seq)
-
+        if (seq != "dancetrack0064.txt"):
+            continue
         trk_path = track_dir + seq
         # trk_path = "/data/Dataset/mot/DanceTrack/val/dancetrack0010/gt/gt.txt"
-        vid_path = f"data/Dataset/mot/{DATASET_NAME}/val/{seq[:-4]}/img1"
+        vid_path = f"data/Dataset/mot/{DATASET_NAME}/{DATA_SPLIT}/{seq[:-4]}/img1"
         if not os.path.exists(vid_path):
             continue
         img_list = glob(
-            f"data/Dataset/mot/{DATASET_NAME}/val/{seq[:-4]}/img1/*.jpg")
+            f"data/Dataset/mot/{DATASET_NAME}/{DATA_SPLIT}/{seq[:-4]}/img1/*.jpg")
         process(trk_path, img_list, f'visualize/{method_name}/{seq[:-4]}.mp4')

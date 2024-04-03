@@ -186,6 +186,9 @@ def get_args_parser():
     parser.add_argument('--memory_bank_max_dist', type=float, default=0.2)
     parser.add_argument('--memory_bank_max_frame_gap', type=int, default=10)
     parser.add_argument('--memory_bank_iou_threshold', type=float, default=0.5)
+    parser.add_argument('--memory_bank_high_conf_threshold',
+                        type=float, default=0.8)
+    parser.add_argument('--memory_bank_temporal_gap_regulization', type=float, default=0.0)
 
     parser.add_argument('--use_checkpoint', action='store_true', default=False)
     parser.add_argument('--query_denoise', type=float, default=0.)

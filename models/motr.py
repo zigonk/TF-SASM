@@ -536,10 +536,17 @@ class MOTR(nn.Module):
             (len(track_instances), mem_bank_len), dtype=torch.bool, device=device)
         track_instances.save_period = torch.zeros(
             (len(track_instances), ), dtype=torch.float32, device=device)
+        # Metric for sparseness estimation
         track_instances.accum_dist = torch.zeros(
+            (len(track_instances), ), dtype=torch.float32, device=device)
+        track_instances.accum_deform = torch.zeros(
             (len(track_instances), ), dtype=torch.float32, device=device)
         track_instances.mem_frames_idx = torch.zeros(
             (len(track_instances), mem_bank_len), dtype=torch.long, device=device)
+        track_instances.best_iou = torch.zeros(
+            (len(track_instances), ), dtype=torch.float32, device=device)
+        track_instances.best_features = torch.zeros(
+            (len(track_instances), d_model), dtype=torch.float32, device=device)
 
         return track_instances.to(self.query_embed.weight.device)
 
@@ -643,6 +650,7 @@ class MOTR(nn.Module):
             frame_res['pred_logits'] = frame_res['pred_logits'][:, :n_ins]
             frame_res['pred_boxes'] = frame_res['pred_boxes'][:, :n_ins]
             frame_res['mov_dist'] = frame_res['mov_dist'][:n_ins]
+            frame_res['deform'] = frame_res['deform'][:n_ins]
             ps_outputs = [{'pred_logits': ps_logits, 'pred_boxes': ps_boxes}]
             for aux_outputs in frame_res['aux_outputs']:
                 ps_outputs.append({
@@ -666,6 +674,7 @@ class MOTR(nn.Module):
         track_instances.output_embedding = frame_res['hs'][0]
         track_instances.frame_idx += 1
         track_instances.accum_dist += frame_res['mov_dist'][0]
+        track_instances.accum_deform += frame_res['deform'][0]
         if self.training:
             # the track id will be assigned by the mather.
             frame_res['track_instances'] = track_instances

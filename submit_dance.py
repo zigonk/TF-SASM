@@ -200,10 +200,17 @@ if __name__ == '__main__':
     parser.add_argument('--update_score_threshold', default=0.5, type=float)
     parser.add_argument('--miss_tolerance', default=20, type=int)
     parser.add_argument('--data_dir', default='data', type=str)
+    parser.add_argument('--num_processes', default=1, type=int)
+    parser.add_argument('--proc_id', default=0, type=int)
+    parser.add_argument('--local_rank', default=0, type=int)
+    parser.add_argument('--local_world_size', default=1, type=int)
+
+
     args = parser.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
+    torch.cuda.set_device(args.local_rank)
     # load model and weights
     detr, _, _ = build_model(args)
     detr.track_embed.score_thr = args.update_score_threshold
@@ -221,9 +228,13 @@ if __name__ == '__main__':
         seq_nums.remove('seqmap')
     vids = [os.path.join(sub_dir, seq) for seq in seq_nums]
 
-    rank = int(os.environ.get('RLAUNCH_REPLICA', '0'))
-    ws = int(os.environ.get('RLAUNCH_REPLICA_TOTAL', '1'))
+    rank = args.local_rank
+    ws = args.local_world_size
     vids = vids[rank::ws]
+
+    # # Only run vids in the current process
+    # vids = vids[args.proc_id::args.num_processes]
+    
 
     for vid in vids:
         det = Detector(args, model=detr, vid=vid)
