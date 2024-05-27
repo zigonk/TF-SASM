@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 def get_color(i):
-    return [(i * 23 * j + 43) % 255 for j in range(3)]
+    return [(i * 30 * j + 100) % 255 for j in range(3)]
 
 
 # with open("./data/Dataset/mot/det_db_oc_sort_full.json") as f:
@@ -44,11 +44,13 @@ def process(trk_path, img_list, output="output.mp4"):
 
     tracklets = defaultdict(list)
     gt_tracklet = defaultdict(list)
+    min_id = 1e9
     for line in open(trk_path):
         t, id, *xywhs = line.split(',')[:7]
         t, id = map(int, (t, id))
         x, y, w, h, s = map(float, xywhs)
         tracklets[t].append((id, *map(int, (x, y, x+w, y+h))))
+        min_id = min(min_id, id)
 
     gt_path = os.path.join(gt_dir, trk_path.split(
         '/')[-1]).replace('txt', 'gt/gt.txt')
@@ -69,18 +71,23 @@ def process(trk_path, img_list, output="output.mp4"):
         #     im = cv2.putText(im, f"{j}", (x1 + 10, y1 + 30),
         #                      cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         for j, x1, y1, x2, y2 in tracklets[i + 1]:
+            j -= min_id - 1
             im = cv2.rectangle(im, (x1, y1), (x2, y2), get_color(j), 4)
             im = cv2.putText(im, f"{j}", (x1 + 10, y1 + 30),
                              cv2.FONT_HERSHEY_SIMPLEX, 1, get_color(j), 2)
+        # Write image as frames
+        save_path = f'visualize/{method_name}/{seq[:-4]}/{i:06d}.jpg'
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        cv2.imwrite(save_path, im)
         writing_process.stdin.write(im.tobytes())
 
 
 if __name__ == '__main__':
-    METHOD="sam_occlusion_discard-test"
+    METHOD="baseline"
     track_dir = "./outputs/tracker_" + METHOD + "/"
     method_name = "motrv2_" + METHOD
     DATASET_NAME = "DanceTrack"
-    DATA_SPLIT = "test"
+    DATA_SPLIT = "val"
     os.makedirs(f'visualize/{method_name}', exist_ok=True)
     jobs = os.listdir(track_dir)
     rank = int(os.environ.get('RLAUNCH_REPLICA', '0'))
@@ -88,8 +95,8 @@ if __name__ == '__main__':
     jobs = sorted(jobs)[rank::ws]
     for seq in jobs:
         print(seq)
-        if (seq != "dancetrack0064.txt"):
-            continue
+        # if (seq != "dancetrack0064.txt"):
+        #     continue
         trk_path = track_dir + seq
         # trk_path = "/data/Dataset/mot/DanceTrack/val/dancetrack0010/gt/gt.txt"
         vid_path = f"data/Dataset/mot/{DATASET_NAME}/{DATA_SPLIT}/{seq[:-4]}/img1"
