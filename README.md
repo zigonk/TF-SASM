@@ -29,8 +29,8 @@ The codebase is built on top of [Deformable DETR](https://github.com/fundamental
 * Install pytorch using conda (optional)
 
     ```bash
-    conda create -n motrv2 python=3.7
-    conda activate motrv2
+    conda create -n tf-sasm python=3.7
+    conda activate tf-sasm
     conda install pytorch=1.8.1 torchvision=0.9.1 cudatoolkit=10.2 -c pytorch
     ```
 
