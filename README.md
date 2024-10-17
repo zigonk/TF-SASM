@@ -9,8 +9,6 @@ This repository is an official implementation of [TF-SASM](https://arxiv.org/abs
 
 **TL; DR.** TF-SASM introduces a novel sparse-memory mechanism that stores longer temporal information and maintains the diversity of object appearance, enabling more efficient use of limited memory. Our implementation is based on the MOTRv2 baseline.
 
-![Overview](https://raw.githubusercontent.com/zyayoung/oss/main/motrv2_main.jpg)
-
 **Abstract.**  In this paper, we propose a novel memory-based approach that selectively stores critical features based on object motion and overlapping awareness, aiming to enhance efficiency while minimizing redundancy. As a result, our method not only store longer temporal information with limited number of stored features in the memory, but also diversify states of a particular object to enhance the association performance. Our approach significantly improves over MOTRv2 in the DanceTrack test set, demonstrating a gain of 2.0% AssA score and 2.1% in IDF1 score.
 
 ## Main Results
