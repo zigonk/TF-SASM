@@ -1,6 +1,6 @@
 # TF-SASM: Training-free Spatial-aware Sparse Memory for Multi-object Tracking
 [![arXiv](https://img.shields.io/badge/arXiv-2407.04327-COLOR.svg)](https://arxiv.org/abs/2407.04327)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/paper/tf-sasm-training-free-spatial-aware-sparse)](https://paperswithcode.com/paper/tf-sasm-training-free-spatial-aware-sparse)
+[![PWC](https://img.shields.io/badge/Paper%20With%20Code-TF--SASM-brightgreen)](https://paperswithcode.com/paper/tf-sasm-training-free-spatial-aware-sparse)
 
 This repository is an official implementation of [TF-SASM](https://arxiv.org/abs/2407.04327).
 
@@ -17,7 +17,7 @@ This repository is an official implementation of [TF-SASM](https://arxiv.org/abs
 
 | **HOTA** | **DetA** | **AssA** | **MOTA** | **IDF1** |                                           **URL**                                           |
 | :------: | :------: | :------: | :------: | :------: | :-----------------------------------------------------------------------------------------: |
-|   71.2   |   83.3   |   61.0   |   92.0   |   73.8   | [model](https://drive.google.com/file/d/1EA4lndu2yQcVgBKR09KfMe5efbf631Th/view?usp=share_link) |
+|   71.2   |   83.3   |   61.0   |   92.0   |   73.8   | [MOTRv2 pretrained](https://drive.google.com/file/d/1EA4lndu2yQcVgBKR09KfMe5efbf631Th/view?usp=share_link) |
 
 
 ## Installation
